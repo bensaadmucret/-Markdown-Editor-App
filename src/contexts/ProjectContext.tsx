@@ -1,347 +1,374 @@
-import React, { createContext, useContext, useState, useEffect } from 'react'
-import { jsPDF } from 'jspdf'
-import html2canvas from 'html2canvas'
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
+import { databaseService } from '../services/DatabaseService';
+import type { DBNote, DBProject, DBTag, DBTask } from '../services/DatabaseService';
 
 interface Task {
-  id: string
-  title: string
-  completed: boolean
-  dueDate?: Date
-  noteId: string
+  id: string;
+  title: string;
+  completed: boolean;
+  dueDate?: Date;
+  noteId: string;
 }
 
 interface Tag {
-  id: string
-  name: string
-  color: string
+  id: string;
+  name: string;
+  color: string;
 }
 
 interface Note {
-  id: string
-  title: string
-  content: string
-  projectId: string
-  tags: string[]
-  tasks: Task[]
+  id: string;
+  title: string;
+  content: string;
+  projectId: string;
+  tags: string[];
+  tasks: Task[];
 }
 
 interface Project {
-  id: string
-  name: string
-  description: string
-  color: string
-  createdAt: Date
-  updatedAt: Date
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 interface ProjectContextType {
-  projects: Project[]
-  currentProject: Project | null
-  notes: Note[]
-  currentNote: Note | null
-  tags: Tag[]
-  createProject: (name: string) => void
-  deleteProject: (projectId: string) => void
-  setCurrentProject: (projectId: string) => void
-  updateProject: (projectId: string, updates: Partial<Project>) => void
-  createNote: (projectId: string, title: string) => void
-  deleteNote: (noteId: string) => void
-  updateNote: (noteId: string, content: string) => void
-  updateNoteTitle: (noteId: string, title: string) => void
-  setCurrentNote: (noteId: string) => void
-  createTag: (name: string, color: string) => Tag
-  addTagToNote: (noteId: string, tagId: string) => void
-  removeTagFromNote: (noteId: string, tagId: string) => void
-  createTask: (noteId: string, title: string, dueDate?: Date) => void
-  updateTask: (taskId: string, updates: Partial<Task>) => void
-  deleteTask: (taskId: string) => void
-  searchNotes: (query: string) => Note[]
-  exportNoteToPDF: (noteId: string) => Promise<void>
+  projects: Project[];
+  currentProject: Project | null;
+  notes: Note[];
+  currentNote: Note | null;
+  tags: Tag[];
+  createProject: (name: string) => Promise<void>;
+  deleteProject: (projectId: string) => Promise<void>;
+  setCurrentProject: (projectId: string) => Promise<void>;
+  updateProject: (projectId: string, updates: Partial<Project>) => Promise<void>;
+  createNote: (projectId: string, title: string) => Promise<void>;
+  deleteNote: (noteId: string) => Promise<void>;
+  updateNote: (noteId: string, content: string) => Promise<void>;
+  updateNoteTitle: (noteId: string, title: string) => Promise<void>;
+  setCurrentNote: (noteId: string) => Promise<void>;
+  createTag: (name: string, color: string) => Promise<Tag>;
+  addTagToNote: (noteId: string, tagId: string) => Promise<void>;
+  removeTagFromNote: (noteId: string, tagId: string) => Promise<void>;
+  createTask: (noteId: string, title: string, dueDate?: Date) => Promise<void>;
+  updateTask: (taskId: string, updates: Partial<Task>) => Promise<void>;
+  deleteTask: (taskId: string) => Promise<void>;
+  searchNotes: (query: string) => Promise<Note[]>;
+  exportNoteToPDF: (noteId: string) => Promise<void>;
 }
 
-const PROJECT_COLORS = [
-  '#458588', // Bleu
-  '#98971a', // Vert
-  '#d79921', // Jaune
-  '#cc241d', // Rouge
-  '#b16286', // Magenta
-  '#689d6a', // Cyan
-  '#a89984', // Gris
-  '#d65d0e', // Orange
-]
-
-export const ProjectContext = createContext<ProjectContextType | null>(null)
+const ProjectContext = createContext<ProjectContextType | null>(null);
 
 export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [currentProject, setCurrentProject] = useState<Project | null>(null)
-  const [notes, setNotes] = useState<Note[]>([])
-  const [currentNote, setCurrentNote] = useState<Note | null>(null)
-  const [tags, setTags] = useState<Tag[]>([])
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [currentProject, setCurrentProject] = useState<Project | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [currentNote, setCurrentNote] = useState<Note | null>(null);
+  const [tags, setTags] = useState<Tag[]>([]);
 
-  // Charger les données depuis le localStorage au démarrage
+  // Initialisation de la base de données
   useEffect(() => {
-    const savedProjects = localStorage.getItem('projects')
-    const savedNotes = localStorage.getItem('notes')
-    const savedTags = localStorage.getItem('tags')
-    const savedCurrentProjectId = localStorage.getItem('currentProjectId')
-    const savedCurrentNoteId = localStorage.getItem('currentNoteId')
-
-    if (savedProjects) {
-      const parsedProjects = JSON.parse(savedProjects)
-      setProjects(parsedProjects.map((project: any) => ({
-        ...project,
-        createdAt: new Date(project.createdAt),
-        updatedAt: new Date(project.updatedAt)
-      })))
-
-      // Restaurer le projet courant
-      if (savedCurrentProjectId) {
-        const currentProject = parsedProjects.find((p: any) => p.id === savedCurrentProjectId)
-        if (currentProject) {
-          setCurrentProject({
-            ...currentProject,
-            createdAt: new Date(currentProject.createdAt),
-            updatedAt: new Date(currentProject.updatedAt)
-          })
-        }
+    const initDB = async () => {
+      try {
+        await databaseService.initialize();
+        await loadInitialData();
+      } catch (error) {
+        console.error('Error initializing database:', error);
       }
+    };
+    initDB();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      // Charger les projets
+      const dbProjects = await databaseService.getAllProjects();
+      const projects = dbProjects.map(p => ({
+        ...p,
+        createdAt: new Date(p.created_at),
+        updatedAt: new Date(p.updated_at)
+      }));
+      setProjects(projects);
+
+      // Charger les notes
+      const dbNotes = await databaseService.getAllNotes();
+      const notesWithDetails = await Promise.all(
+        dbNotes.map(async n => {
+          const tags = await databaseService.getNoteTags(n.id);
+          const tasks = await databaseService.getNoteTasks(n.id);
+          return {
+            id: n.id,
+            title: n.title,
+            content: n.content,
+            projectId: n.project_id,
+            tags: tags.map(t => t.id),
+            tasks: tasks.map(t => ({
+              ...t,
+              dueDate: t.due_date ? new Date(t.due_date) : undefined,
+              noteId: t.note_id
+            }))
+          };
+        })
+      );
+      setNotes(notesWithDetails);
+
+      // Charger les tags
+      const dbTags = await databaseService.getAllTags();
+      setTags(dbTags);
+
+    } catch (error) {
+      console.error('Error loading initial data:', error);
     }
+  };
 
-    if (savedNotes) {
-      const parsedNotes = JSON.parse(savedNotes)
-      setNotes(parsedNotes)
-
-      // Restaurer la note courante
-      if (savedCurrentNoteId) {
-        const currentNote = parsedNotes.find((n: any) => n.id === savedCurrentNoteId)
-        if (currentNote) {
-          setCurrentNote(currentNote)
-        }
-      }
-    }
-
-    if (savedTags) {
-      setTags(JSON.parse(savedTags))
-    }
-  }, [])
-
-  // Sauvegarder les données dans le localStorage à chaque changement
-  useEffect(() => {
-    localStorage.setItem('projects', JSON.stringify(projects))
-  }, [projects])
-
-  useEffect(() => {
-    localStorage.setItem('notes', JSON.stringify(notes))
-  }, [notes])
-
-  useEffect(() => {
-    localStorage.setItem('tags', JSON.stringify(tags))
-  }, [tags])
-
-  // Sauvegarder currentProject et currentNote dans le localStorage
-  useEffect(() => {
-    if (currentProject) {
-      localStorage.setItem('currentProjectId', currentProject.id)
-    } else {
-      localStorage.removeItem('currentProjectId')
-    }
-  }, [currentProject])
-
-  useEffect(() => {
-    if (currentNote) {
-      localStorage.setItem('currentNoteId', currentNote.id)
-    } else {
-      localStorage.removeItem('currentNoteId')
-    }
-  }, [currentNote])
-
-  const handleCreateProject = (name: string) => {
-    const newProject: Project = {
+  const handleCreateProject = async (name: string) => {
+    const newProject: DBProject = {
       id: Date.now().toString(),
       name,
       description: '',
-      color: PROJECT_COLORS[projects.length % PROJECT_COLORS.length],
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      color: '#458588',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await databaseService.createProject(newProject);
+    await loadInitialData();
+  };
+
+  const handleDeleteProject = async (projectId: string) => {
+    await databaseService.deleteProject(projectId);
+    await loadInitialData();
+  };
+
+  const handleSetCurrentProject = async (projectId: string) => {
+    const project = projects.find(p => p.id === projectId);
+    if (project) {
+      setCurrentProject(project);
     }
-    setProjects(prev => [...prev, newProject])
-    return newProject
-  }
+  };
 
-  const handleUpdateProject = (projectId: string, updates: Partial<Project>) => {
-    setProjects(prev =>
-      prev.map(project =>
-        project.id === projectId
-          ? { ...project, ...updates, updatedAt: new Date() }
-          : project
-      )
-    )
-  }
+  const handleUpdateProject = async (projectId: string, updates: Partial<Project>) => {
+    const project = projects.find(p => p.id === projectId);
+    if (!project) return;
 
-  const handleDeleteProject = (projectId: string) => {
-    setProjects(prev => prev.filter(p => p.id !== projectId))
-    setNotes(prev => prev.filter(n => n.projectId !== projectId))
-    if (currentProject?.id === projectId) {
-      setCurrentProject(null)
-      setCurrentNote(null)
-    }
-  }
+    const updatedProject: DBProject = {
+      ...project,
+      ...updates,
+      updated_at: new Date().toISOString()
+    };
 
-  const handleSetCurrentProject = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId)
-    setCurrentProject(project || null)
-    setCurrentNote(null)
-  }
+    await databaseService.updateProject(updatedProject);
+    await loadInitialData();
+  };
 
-  const handleCreateNote = (projectId: string, title: string) => {
-    const newNote: Note = {
+  const handleCreateNote = async (projectId: string, title: string) => {
+    const newNote: DBNote = {
       id: Date.now().toString(),
       title,
       content: '',
-      projectId,
-      tags: [],
-      tasks: [],
+      project_id: projectId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await databaseService.createNote(newNote);
+    await loadInitialData();
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    await databaseService.deleteNote(noteId);
+    await loadInitialData();
+  };
+
+  const handleUpdateNote = async (noteId: string, content: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+
+    const updatedNote: DBNote = {
+      id: noteId,
+      title: note.title,
+      content,
+      project_id: note.projectId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await databaseService.updateNote(updatedNote);
+    await loadInitialData();
+  };
+
+  const handleUpdateNoteTitle = async (noteId: string, title: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (!note) return;
+
+    const updatedNote: DBNote = {
+      id: noteId,
+      title,
+      content: note.content,
+      project_id: note.projectId,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    await databaseService.updateNote(updatedNote);
+    await loadInitialData();
+  };
+
+  const handleSetCurrentNote = async (noteId: string) => {
+    const note = notes.find(n => n.id === noteId);
+    if (note) {
+      setCurrentNote(note);
     }
-    setNotes(prev => [...prev, newNote])
-    return newNote
-  }
+  };
 
-  const handleDeleteNote = (noteId: string) => {
-    setNotes(prev => prev.filter(n => n.id !== noteId))
-    if (currentNote?.id === noteId) {
-      setCurrentNote(null)
-    }
-  }
-
-  const handleUpdateNote = (noteId: string, content: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === noteId
-          ? { ...note, content }
-          : note
-      )
-    )
-    setCurrentNote(prev => 
-      prev?.id === noteId 
-        ? { ...prev, content }
-        : prev
-    )
-  }
-
-  const handleUpdateNoteTitle = (noteId: string, title: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === noteId
-          ? { ...note, title }
-          : note
-      )
-    )
-  }
-
-  const handleSetCurrentNote = (noteId: string) => {
-    const note = notes.find(n => n.id === noteId)
-    setCurrentNote(note || null)
-  }
-
-  const handleCreateTag = (name: string, color: string) => {
-    const newTag: Tag = {
+  const handleCreateTag = async (name: string, color: string) => {
+    const newTag: DBTag = {
       id: Date.now().toString(),
       name,
-      color,
-    }
-    setTags(prev => [...prev, newTag])
-    return newTag
-  }
+      color
+    };
 
-  const handleAddTagToNote = (noteId: string, tagId: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === noteId && !note.tags.includes(tagId)
-          ? { ...note, tags: [...note.tags, tagId] }
-          : note
-      )
-    )
-  }
+    await databaseService.createTag(newTag);
+    await loadInitialData();
+    return newTag;
+  };
 
-  const handleRemoveTagFromNote = (noteId: string, tagId: string) => {
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === noteId
-          ? { ...note, tags: note.tags.filter(id => id !== tagId) }
-          : note
-      )
-    )
-  }
+  const handleAddTagToNote = async (noteId: string, tagId: string) => {
+    await databaseService.addTagToNote(noteId, tagId);
+    await loadInitialData();
+  };
 
-  const handleCreateTask = (noteId: string, title: string, dueDate?: Date) => {
-    const newTask: Task = {
+  const handleRemoveTagFromNote = async (noteId: string, tagId: string) => {
+    await databaseService.removeTagFromNote(noteId, tagId);
+    await loadInitialData();
+  };
+
+  const handleCreateTask = async (noteId: string, title: string, dueDate?: Date) => {
+    const newTask: DBTask = {
       id: Date.now().toString(),
       title,
       completed: false,
-      dueDate,
-      noteId,
-    }
-    setNotes(prev =>
-      prev.map(note =>
-        note.id === noteId
-          ? { ...note, tasks: [...note.tasks, newTask] }
-          : note
-      )
-    )
-  }
+      due_date: dueDate?.toISOString(),
+      note_id: noteId
+    };
 
-  const handleUpdateTask = (taskId: string, updates: Partial<Task>) => {
-    setNotes(prev =>
-      prev.map(note => ({
-        ...note,
-        tasks: note.tasks.map(task =>
-          task.id === taskId
-            ? { ...task, ...updates }
-            : task
-        ),
-      }))
-    )
-  }
+    await databaseService.createTask(newTask);
+    await loadInitialData();
+  };
 
-  const handleDeleteTask = (taskId: string) => {
-    setNotes(prev =>
-      prev.map(note => ({
-        ...note,
-        tasks: note.tasks.filter(task => task.id !== taskId),
-      }))
-    )
-  }
+  const handleUpdateTask = async (taskId: string, updates: Partial<Task>) => {
+    const note = notes.find(n => n.tasks.some(t => t.id === taskId));
+    if (!note) return;
 
-  const handleSearchNotes = (query: string) => {
-    if (!query.trim()) return []
-    
-    const searchTerms = query.toLowerCase().split(' ')
-    return notes.filter(note => {
-      const noteText = `${note.title} ${note.content}`.toLowerCase()
-      return searchTerms.every(term => noteText.includes(term))
-    })
-  }
+    const task = note.tasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    const updatedTask: DBTask = {
+      id: taskId,
+      title: updates.title || task.title,
+      completed: updates.completed ?? task.completed,
+      due_date: updates.dueDate?.toISOString(),
+      note_id: task.noteId
+    };
+
+    await databaseService.updateTask(updatedTask);
+    await loadInitialData();
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    await databaseService.deleteTask(taskId);
+    await loadInitialData();
+  };
+
+  const handleSearchNotes = async (query: string) => {
+    const searchResults = await databaseService.searchNotes(query);
+    return Promise.all(
+      searchResults.map(async n => {
+        const tags = await databaseService.getNoteTags(n.id);
+        const tasks = await databaseService.getNoteTasks(n.id);
+        return {
+          id: n.id,
+          title: n.title,
+          content: n.content,
+          projectId: n.project_id,
+          tags: tags.map(t => t.id),
+          tasks: tasks.map(t => ({
+            ...t,
+            dueDate: t.due_date ? new Date(t.due_date) : undefined,
+            noteId: t.note_id
+          }))
+        };
+      })
+    );
+  };
 
   const handleExportNoteToPDF = async (noteId: string) => {
-    const note = notes.find(n => n.id === noteId)
-    if (!note) return
+    console.log('handleExportNoteToPDF called with noteId:', noteId);
+    
+    const note = notes.find(n => n.id === noteId);
+    if (!note) {
+      console.error('Note not found for id:', noteId);
+      return;
+    }
+    console.log('Found note:', note);
 
-    const element = document.querySelector('.w-md-editor-preview')
-    if (!element) return
+    // Attendre que le contenu soit rendu
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    const canvas = await html2canvas(element)
-    const imgData = canvas.toDataURL('image/png')
+    const previewElement = document.querySelector('.markdown-preview');
+    if (!previewElement) {
+      console.error('Preview element not found');
+      return;
+    }
+    console.log('Found preview element:', previewElement);
 
-    const pdf = new jsPDF({
-      orientation: 'portrait',
-      unit: 'px',
-      format: [canvas.width, canvas.height]
-    })
+    try {
+      const padding = 40;
+      const contentWidth = previewElement.scrollWidth;
+      const contentHeight = previewElement.scrollHeight;
+      const pdfWidth = contentWidth + (padding * 2);
+      const pdfHeight = contentHeight + (padding * 2);
+      console.log('PDF dimensions:', { contentWidth, contentHeight, pdfWidth, pdfHeight });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height)
-    pdf.save(`${note.title}.pdf`)
-  }
+      console.log('Creating canvas...');
+      const canvas = await html2canvas(previewElement as HTMLElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width: contentWidth,
+        height: contentHeight,
+        backgroundColor: '#ffffff'
+      });
+      console.log('Canvas created successfully');
+      
+      console.log('Creating PDF...');
+      const pdf = new jsPDF({
+        orientation: contentWidth > contentHeight ? 'landscape' : 'portrait',
+        unit: 'px',
+        format: [pdfWidth, pdfHeight]
+      });
+
+      console.log('Adding image to PDF...');
+      pdf.addImage(
+        canvas.toDataURL('image/png'),
+        'PNG',
+        padding,
+        padding,
+        contentWidth,
+        contentHeight
+      );
+
+      console.log('Saving PDF as:', `${note.title}.pdf`);
+      pdf.save(`${note.title}.pdf`);
+      console.log('PDF saved successfully');
+    } catch (error) {
+      console.error('Error during PDF export:', error);
+    }
+  };
 
   const value = {
     projects,
@@ -366,19 +393,15 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     deleteTask: handleDeleteTask,
     searchNotes: handleSearchNotes,
     exportNoteToPDF: handleExportNoteToPDF,
-  }
+  };
 
-  return (
-    <ProjectContext.Provider value={value}>
-      {children}
-    </ProjectContext.Provider>
-  )
-}
+  return <ProjectContext.Provider value={value}>{children}</ProjectContext.Provider>;
+};
 
 export const useProject = () => {
-  const context = useContext(ProjectContext)
+  const context = useContext(ProjectContext);
   if (!context) {
-    throw new Error('useProject must be used within a ProjectProvider')
+    throw new Error('useProject must be used within a ProjectProvider');
   }
-  return context
-}
+  return context;
+};

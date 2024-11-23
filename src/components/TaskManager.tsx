@@ -66,6 +66,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({ noteId }) => {
                 edge="start"
                 checked={task.completed}
                 onChange={(e) => handleToggleTask(task.id, e.target.checked)}
+                data-testid={`task-checkbox-${task.id}`}
                 sx={{
                   color: 'primary.main',
                   '&.Mui-checked': {
@@ -84,6 +85,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({ noteId }) => {
                 task.dueDate && (
                   <Box
                     component="span"
+                    data-testid={`task-date-${task.id}`}
                     sx={{
                       display: 'flex',
                       alignItems: 'center',
@@ -93,7 +95,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({ noteId }) => {
                     }}
                   >
                     <EventIcon fontSize="small" />
-                    {new Date(task.dueDate).toLocaleDateString()}
+                    {new Date(task.dueDate).toLocaleDateString('fr-FR')}
                   </Box>
                 )
               }
@@ -103,6 +105,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({ noteId }) => {
                 edge="end"
                 size="small"
                 onClick={() => deleteTask(task.id)}
+                data-testid={`delete-task-${task.id}`}
                 sx={{
                   opacity: 0,
                   transition: 'opacity 0.2s',
@@ -154,6 +157,7 @@ export const TaskManager: React.FC<TaskManagerProps> = ({ noteId }) => {
         <IconButton
           onClick={handleCreateTask}
           disabled={!newTaskTitle.trim()}
+          data-testid="add-task-button"
           sx={{
             bgcolor: 'primary.main',
             color: 'primary.contrastText',

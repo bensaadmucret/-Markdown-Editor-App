@@ -7,11 +7,28 @@ import App from './App'
 import theme from './theme'
 import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <App />
-    </ThemeProvider>
-  </React.StrictMode>
-)
+declare global {
+  interface Window {
+    __TAURI__?: boolean;
+  }
+}
+
+// Ensure Tauri is available before initializing
+async function initApp() {
+  if (window.__TAURI__) {
+    // Only initialize Tauri-specific features if running in Tauri
+    const { appWindow } = await import('@tauri-apps/api/window')
+    await appWindow.listen('tauri://update-status', function () {})
+  }
+
+  ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+    <React.StrictMode>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <App />
+      </ThemeProvider>
+    </React.StrictMode>
+  )
+}
+
+initApp()

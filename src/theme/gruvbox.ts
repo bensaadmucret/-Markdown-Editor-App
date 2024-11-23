@@ -1,6 +1,6 @@
-import { ThemeOptions } from '@mui/material'
+import { ThemeOptions, createTheme } from '@mui/material'
 
-const gruvboxTheme: ThemeOptions = {
+const gruvboxThemeOptions: ThemeOptions = {
   components: {
     MuiCssBaseline: {
       styleOverrides: {
@@ -184,4 +184,4 @@ const gruvboxTheme: ThemeOptions = {
   },
 }
 
-export { gruvboxTheme }
+export const gruvboxTheme = createTheme(gruvboxThemeOptions)
